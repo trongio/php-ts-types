@@ -32,9 +32,21 @@ Generate TypeScript types from PHP classes, and fail CI when the committed file 
 | a backed enum                          | a named literal union      |
 | a class a source supports              | a named reference          |
 | a class a leaf mapper maps             | the mapped type            |
+| a class leaf-mapped to `json`          | `JsonValue` (recursive)    |
 | `list<T>`                              | `T[]`                      |
 | `array<string, T>`                     | `Record<string, T>`        |
 | `array{a: T, 'b'?: U}` (sealed)        | `{ a: T; b?: U }`          |
+| a configured wrapper `W<T>` (property) | `key?: T`                  |
+
+A **wrapper** is your own lazy-prop class (an Inertia optional or deferred prop), configured as
+`'wrappers' => [Optional::class => 'optional']`. It is read from the property's PHPDoc with its one type
+argument (`@param Optional<Verdict> $verdict`), and the key becomes optional: the server leaves it out. A
+nullable wrapper means the same (a null wrapper is a key left out, never a `null` sent). A wrapper without its
+type argument, inside a list, map or shape, or in a union with anything but `null` is refused.
+
+A **`json` leaf** (`'leaves' => [MyJson::class => 'json']`) is for a value sent exactly as it was stored, such
+as a recorded payload: it emits one named recursive type, `export type JsonValue = string | number | boolean |
+null | JsonValue[] | { [key: string]: JsonValue };`, never `unknown`.
 
 Anything else throws, naming `Class::$property.key`: `mixed`, `object`, bare `array`, `T[]`,
 `array<int, T>`, unsealed or positional shapes, `self::CONST` types, `@phpstan-type` aliases, unit enums and

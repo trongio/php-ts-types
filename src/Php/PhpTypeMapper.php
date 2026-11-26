@@ -40,6 +40,8 @@ use Trongio\PhpTsTypes\Type\RecordType;
 use Trongio\PhpTsTypes\Type\Type;
 use Trongio\PhpTsTypes\Type\Types;
 use Trongio\PhpTsTypes\Type\Union;
+use Trongio\PhpTsTypes\Type\Wrapped;
+use Trongio\PhpTsTypes\Type\WrapperKind;
 
 /**
  * PHP types (native, or PHPDoc read with phpstan/phpdoc-parser) to the type model. It knows exactly this table
@@ -57,11 +59,17 @@ use Trongio\PhpTsTypes\Type\Union;
  * | list<T>, non-empty-list<T>                 | T[]                            |
  * | array<string, T>                           | Record<string, T>              |
  * | array{a: T, 'b-c'?: U} (sealed)            | { a: T; "b-c"?: U }            |
+ * | Wrapper<T>, a configured wrapper class     | x?: T (the property only)      |
  *
  * Refused: mixed, object, bare array/list, `T[]` and `array<int, T>` (a list and an int-keyed map serialize
  * differently, so say `list<>`), unsealed or positional shapes, class constants (`self::A`), int ranges and
  * `@phpstan-type`/`@psalm-type` aliases. Classes are handed to the {@see ClassTypeResolver}. When a PHPDoc type
  * exists it wins over the native one; a native `?T` still adds `| null`.
+ *
+ * A wrapper (`$wrappers`, class => {@see WrapperKind}) is a lazy prop the server may leave out: `Optional<T>` as a
+ * property's type maps to a {@see Wrapped} T, which emits `x?: T`. A nullable wrapper (`?Optional<T>`,
+ * `Optional<T>|null`) is the same type: a null wrapper is a key left out, never a `null` sent. A wrapper anywhere
+ * but a property's top level, without its one type argument, or in a union with anything but null is refused.
  */
 final class PhpTypeMapper
 {
@@ -82,8 +90,10 @@ final class PhpTypeMapper
     /** @var array<string, array<string, string>> file => lowercased alias => fully qualified name */
     private array $imports = [];
 
+    /** @param  array<string, WrapperKind>  $wrappers  wrapper class (fully qualified) => the lazy kind it is */
     public function __construct(
         private readonly ClassTypeResolver $classes,
+        private readonly array $wrappers = [],
     ) {
         $config = new ParserConfig([]);
         $constants = new ConstExprParser($config);
@@ -106,8 +116,49 @@ final class PhpTypeMapper
         }
 
         $type = $this->node($tag->type, $property->getDeclaringClass(), $where);
+        $wrapped = $this->wrapped($type, $where);
+
+        if ($wrapped !== null) {
+            return $wrapped;
+        }
 
         return $native !== null && $native->allowsNull() ? Types::nullable($type) : $type;
+    }
+
+    /**
+     * The wrapper a property's type is, or null when it is none: `W<T>` alone, or `W<T>|null` (a null wrapper
+     * is a key left out). A wrapper in a union with any other member has no single wire meaning: refused.
+     */
+    private function wrapped(Type $type, string $where): ?Wrapped
+    {
+        if ($type instanceof Wrapped) {
+            return $type;
+        }
+
+        if (! $type instanceof Union) {
+            return null;
+        }
+
+        $wrapped = [];
+        $others = 0;
+
+        foreach ($type->members as $member) {
+            if ($member instanceof Wrapped) {
+                $wrapped[] = $member;
+            } elseif ($member->key() !== 'null') {
+                $others++;
+            }
+        }
+
+        if ($wrapped === []) {
+            return null;
+        }
+
+        if (count($wrapped) > 1 || $others > 0) {
+            throw new UnsupportedType($where, 'a wrapper in a union (only `|null` may join it)');
+        }
+
+        return $wrapped[0];
     }
 
     /** The PHPDoc description of a property's `@var` or constructor `@param`, whitespace collapsed. */
@@ -224,13 +275,13 @@ final class PhpTypeMapper
     {
         return match (true) {
             $node instanceof NullableTypeNode => Types::nullable($this->node($node->type, $context, $where)),
-            $node instanceof UnionTypeNode => Union::of(...array_map(
+            $node instanceof UnionTypeNode => $this->union(Union::of(...array_map(
                 fn (TypeNode $member): Type => $this->node($member, $context, $where),
                 $node->types,
-            )),
+            )), $where),
             $node instanceof IdentifierTypeNode => $this->isBuiltin($node->name)
                 ? $this->builtin($node->name, $where)
-                : $this->classes->resolveClass($this->resolveName($node->name, $context), $where),
+                : $this->identifier($this->resolveName($node->name, $context), $where),
             $node instanceof ConstTypeNode && $node->constExpr instanceof ConstExprStringNode => new Literal($node->constExpr->value),
             $node instanceof ConstTypeNode && $node->constExpr instanceof ConstExprIntegerNode => new Literal(self::integer($node->constExpr->value, $where)),
             $node instanceof GenericTypeNode => $this->generic($node, $context, $where),
@@ -239,20 +290,58 @@ final class PhpTypeMapper
         };
     }
 
+    /** A union, refused when it joins a wrapper to anything but null (see {@see self::wrapped()}). */
+    private function union(Type $type, string $where): Type
+    {
+        $this->wrapped($type, $where);
+
+        return $type;
+    }
+
+    /** `$type`, refused when it is a wrapper: inside a list, a map, a shape or another wrapper nothing can leave a key out. */
+    private function eager(Type $type, string $where): Type
+    {
+        if ($this->wrapped($type, $where) !== null) {
+            throw new UnsupportedType($where, 'a wrapper inside a list, map, shape or wrapper (only a property may be lazy)');
+        }
+
+        return $type;
+    }
+
+    /** A class named without type arguments. A wrapper needs its one: `Optional` alone says nothing about the value. */
+    private function identifier(string $class, string $where): Type
+    {
+        if (array_key_exists($class, $this->wrappers)) {
+            throw new UnsupportedType($where, $class.' (a wrapper needs its type argument: '.$class.'<T>)');
+        }
+
+        return $this->classes->resolveClass($class, $where);
+    }
+
     /** @param  ReflectionClass<object>  $context */
     private function generic(GenericTypeNode $node, ReflectionClass $context, string $where): Type
     {
         $base = (string) $node->type;
         $params = $node->genericTypes;
 
+        if (! $this->isBuiltin($base)) {
+            $kind = $this->wrappers[$this->resolveName($base, $context)] ?? null;
+
+            if ($kind !== null && count($params) === 1) {
+                return new Wrapped($kind, $this->eager($this->node($params[0], $context, $where), $where));
+            }
+
+            throw new UnsupportedType($where, (string) $node);
+        }
+
         if (in_array($base, ['list', 'non-empty-list'], true) && count($params) === 1) {
-            return new ListType($this->node($params[0], $context, $where.'[]'));
+            return new ListType($this->eager($this->node($params[0], $context, $where.'[]'), $where.'[]'));
         }
 
         $key = $params[0] ?? null;
 
         if ($base === 'array' && count($params) === 2 && $key instanceof IdentifierTypeNode && in_array($key->name, self::STRING, true)) {
-            return new RecordType($this->node($params[1], $context, $where.'{}'));
+            return new RecordType($this->eager($this->node($params[1], $context, $where.'{}'), $where.'{}'));
         }
 
         throw new UnsupportedType($where, (string) $node);
@@ -274,7 +363,7 @@ final class PhpTypeMapper
                 $key instanceof ConstExprStringNode => $key->value,
                 default => throw new UnsupportedType($where, (string) $node.' (positional or integer key)'),
             };
-            $properties[] = new Property($name, $this->node($item->valueType, $context, $where.'.'.$name), $item->optional);
+            $properties[] = new Property($name, $this->eager($this->node($item->valueType, $context, $where.'.'.$name), $where.'.'.$name), $item->optional);
         }
 
         return new ObjectType($properties);

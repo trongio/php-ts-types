@@ -12,11 +12,13 @@ use Trongio\PhpTsTypes\Php\ClassTypeResolver;
 use Trongio\PhpTsTypes\Php\LeafMapper;
 use Trongio\PhpTsTypes\Php\PhpTypeMapper;
 use Trongio\PhpTsTypes\Source\TypeSource;
+use Trongio\PhpTsTypes\Type\Json;
 use Trongio\PhpTsTypes\Type\Literal;
 use Trongio\PhpTsTypes\Type\Reference;
 use Trongio\PhpTsTypes\Type\Type;
 use Trongio\PhpTsTypes\Type\TypeDefinitions;
 use Trongio\PhpTsTypes\Type\Union;
+use Trongio\PhpTsTypes\Type\WrapperKind;
 
 /**
  * PHP classes to {@see TypeDefinitions}. Starting from the root classes, each class is described by the first
@@ -41,14 +43,17 @@ final class TypeGenerator implements ClassTypeResolver
      *
      * @param  list<TypeSource>  $sources
      * @param  list<LeafMapper>  $leaves
+     * @param  array<string, WrapperKind>  $wrappers  lazy-prop wrapper classes (fully qualified) => their kind; see
+     *                                                {@see PhpTypeMapper}
      */
     public function __construct(
         private readonly array $sources,
         private readonly array $leaves = [],
         ?TypeDefinitions $definitions = null,
+        array $wrappers = [],
     ) {
         $this->definitions = $definitions ?? new TypeDefinitions;
-        $this->mapper = new PhpTypeMapper($this);
+        $this->mapper = new PhpTypeMapper($this, $wrappers);
     }
 
     /**
@@ -120,6 +125,10 @@ final class TypeGenerator implements ClassTypeResolver
     {
         foreach ($this->leaves as $leaf) {
             $type = $leaf->map($class);
+
+            if ($type instanceof Json) {
+                $this->definitions->define(Json::NAME, $type, 'the json leaf');
+            }
 
             if ($type !== null) {
                 return $type;

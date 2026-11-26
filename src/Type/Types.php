@@ -13,6 +13,12 @@ final class Types
         return $a->key() === $b->key();
     }
 
+    /** The leaf type a config name stands for: `string`, `number`, `boolean`, `null`, or `json` ({@see Json}). */
+    public static function named(string $name): ?Type
+    {
+        return $name === 'json' ? new Json : Primitive::named($name);
+    }
+
     /** `T | null`. */
     public static function nullable(Type $type): Type
     {

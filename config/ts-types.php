@@ -25,11 +25,16 @@ return [
     // More TypeSource classes, resolved from the container, asked after the built-in one.
     'sources' => [],
 
-    // class or interface => string | number | boolean, for leaves you serialize yourself (Carbon => string).
+    // class or interface => string | number | boolean | json, for leaves you serialize yourself (Carbon => string).
+    // `json` is any JSON value, emitted as the named recursive type `JsonValue`.
     'leaves' => [],
 
     // LeafMapper classes, resolved from the container, asked before `leaves`.
     'leaf_mappers' => [],
+
+    // Lazy-prop wrapper classes => deferred | optional | once | merge. `Wrapper<T>` as a property's PHPDoc type
+    // emits `key?: T`; a nullable wrapper is the same (a null wrapper is a key left out).
+    'wrappers' => [],
 
     // The Inertia page manifest: `export type InertiaPages = { "<component>": <PropsType>; ... }`.
     'inertia' => [

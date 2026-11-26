@@ -11,10 +11,13 @@ use Trongio\PhpTsTypes\Emitter\TypeScriptEmitter;
 use Trongio\PhpTsTypes\Exceptions\UnsupportedType;
 use Trongio\PhpTsTypes\Php\PhpTypeMapper;
 use Trongio\PhpTsTypes\Source\PublicPropertiesSource;
+use Trongio\PhpTsTypes\Tests\Fixtures\FixtureLazy;
 use Trongio\PhpTsTypes\Tests\Fixtures\FixturePage;
 use Trongio\PhpTsTypes\Tests\Fixtures\Shape;
 use Trongio\PhpTsTypes\Type\ObjectType;
 use Trongio\PhpTsTypes\Type\Property;
+use Trongio\PhpTsTypes\Type\Wrapped;
+use Trongio\PhpTsTypes\Type\WrapperKind;
 use Trongio\PhpTsTypes\TypeGenerator;
 
 /**
@@ -25,7 +28,7 @@ final class PhpTypeMapperTest extends TestCase
 {
     private static function render(string $php): string
     {
-        $generator = new TypeGenerator([new PublicPropertiesSource([Shape::class])]);
+        $generator = new TypeGenerator([new PublicPropertiesSource([Shape::class])], wrappers: [FixtureLazy::class => WrapperKind::Deferred]);
         $type = $generator->docType($php, new ReflectionClass(FixturePage::class), 'FixturePage::$probe');
         $definitions = $generator->definitions();
         $definitions->define('Probe', new ObjectType([new Property('x', $type)]));
@@ -106,6 +109,15 @@ final class PhpTypeMapperTest extends TestCase
             'an unknown class' => ['NoSuchThing'],
             'a type alias' => ['Row'],
             'unparsable' => ['list<'],
+            'a wrapper without its type argument' => ['FixtureLazy'],
+            'a wrapper with two type arguments' => ['FixtureLazy<int, string>'],
+            'a wrapper inside a list' => ['list<FixtureLazy<int>>'],
+            'a wrapper inside a shape' => ['array{a: FixtureLazy<int>}'],
+            'a wrapper inside a map' => ['array<string, FixtureLazy<int>>'],
+            'a wrapper in a union' => ['FixtureLazy<int>|string'],
+            'a wrapper inside a wrapper' => ['FixtureLazy<FixtureLazy<int>>'],
+            'a nullable wrapper inside a wrapper' => ['FixtureLazy<FixtureLazy<int>|null>'],
+            'an unconfigured generic class' => ['FixtureChild<int>'],
         ];
     }
 
@@ -116,6 +128,15 @@ final class PhpTypeMapperTest extends TestCase
         $this->expectExceptionMessage('FixturePage::$probe');
 
         self::render($php);
+    }
+
+    public function test_a_configured_wrapper_maps_to_its_kind_around_the_inner_type(): void
+    {
+        $generator = new TypeGenerator([new PublicPropertiesSource([Shape::class])], wrappers: [FixtureLazy::class => WrapperKind::Deferred]);
+        $type = $generator->docType('FixtureLazy<list<int>>', new ReflectionClass(FixturePage::class), 'FixturePage::$probe');
+
+        self::assertInstanceOf(Wrapped::class, $type);
+        self::assertSame('deferred<list<number>>', $type->key());
     }
 
     public function test_an_integer_literal_too_large_for_an_int_is_refused_not_saturated(): void

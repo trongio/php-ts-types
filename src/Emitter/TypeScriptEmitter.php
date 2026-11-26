@@ -6,6 +6,7 @@ namespace Trongio\PhpTsTypes\Emitter;
 
 use Trongio\PhpTsTypes\Exceptions\UnresolvedReference;
 use Trongio\PhpTsTypes\Exceptions\UnsupportedType;
+use Trongio\PhpTsTypes\Type\Json;
 use Trongio\PhpTsTypes\Type\ListType;
 use Trongio\PhpTsTypes\Type\Literal;
 use Trongio\PhpTsTypes\Type\ObjectType;
@@ -21,7 +22,7 @@ use Trongio\PhpTsTypes\Type\Wrapped;
 /**
  * Renders {@see TypeDefinitions} as one TypeScript module: the header, then `export type Name = ...;` per name,
  * sorted, then the raw `append` block (for a `declare module` augmentation). Only `export type`: no
- * `interface`, `any`, `unknown` or `{}` is ever emitted, and the output is clean under `verbatimModuleSyntax`.
+ * `interface`, `any`, `unknown` or `{}` is ever emitted (any JSON value is the named recursive {@see Json}), and the output is clean under `verbatimModuleSyntax`.
  * Keys are emitted verbatim, quoted only when they are not identifiers. The output is deterministic.
  */
 final class TypeScriptEmitter
@@ -44,6 +45,10 @@ final class TypeScriptEmitter
     /** A top-level object is written one key per line, with its descriptions; anything else inline. */
     private function top(Type $type, TypeDefinitions $definitions, string $where): string
     {
+        if ($type instanceof Json) {
+            return 'string | number | boolean | null | '.Json::NAME.'[] | { [key: string]: '.Json::NAME.' }';
+        }
+
         if (! $type instanceof ObjectType || $type->properties === []) {
             return $this->inline($type, $definitions, $where);
         }
@@ -91,6 +96,9 @@ final class TypeScriptEmitter
             $type instanceof Reference => $definitions->has($type->name)
                 ? $type->name
                 : throw new UnresolvedReference($type->name, $where),
+            $type instanceof Json => $definitions->has(Json::NAME)
+                ? Json::NAME
+                : throw new UnresolvedReference(Json::NAME, $where),
             $type instanceof Wrapped => throw new UnsupportedType($where, $type->kind->value.' outside a property'),
             default => throw new UnsupportedType($where, $type::class),
         };

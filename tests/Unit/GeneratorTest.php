@@ -24,13 +24,18 @@ use Trongio\PhpTsTypes\Tests\Fixtures\FixtureBracketed;
 use Trongio\PhpTsTypes\Tests\Fixtures\FixtureCarbon;
 use Trongio\PhpTsTypes\Tests\Fixtures\FixtureChild;
 use Trongio\PhpTsTypes\Tests\Fixtures\FixtureGroupUse;
+use Trongio\PhpTsTypes\Tests\Fixtures\FixtureLazy;
+use Trongio\PhpTsTypes\Tests\Fixtures\FixtureLazyPage;
 use Trongio\PhpTsTypes\Tests\Fixtures\FixtureNamed;
 use Trongio\PhpTsTypes\Tests\Fixtures\FixturePage;
 use Trongio\PhpTsTypes\Tests\Fixtures\FixtureProtected;
 use Trongio\PhpTsTypes\Tests\Fixtures\FixtureWhen;
 use Trongio\PhpTsTypes\Tests\Fixtures\Other\FixtureChild as OtherChild;
 use Trongio\PhpTsTypes\Tests\Fixtures\Shape;
+use Trongio\PhpTsTypes\Type\Json;
 use Trongio\PhpTsTypes\Type\Primitive;
+use Trongio\PhpTsTypes\Type\Types;
+use Trongio\PhpTsTypes\Type\WrapperKind;
 use Trongio\PhpTsTypes\TypeGenerator;
 
 /** Classes in, one module out: the public-properties source, leaf mappers, key case, the Inertia manifest. */
@@ -96,6 +101,44 @@ final class GeneratorTest extends TestCase
         );
 
         self::assertStringContainsString("export type FixtureWhen = {\n\tat: string;\n};", self::emit($generator, FixtureWhen::class));
+    }
+
+    public function test_a_json_leaf_is_one_named_recursive_type_never_unknown(): void
+    {
+        $generator = new TypeGenerator(
+            [new PublicPropertiesSource([Shape::class])],
+            [new ClassMapLeafMapper([DateTimeInterface::class => new Json])],
+        );
+        $out = self::emit($generator, FixtureWhen::class);
+
+        self::assertStringContainsString("export type FixtureWhen = {\n\tat: JsonValue;\n};", $out);
+        self::assertStringContainsString('export type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };', $out);
+        self::assertStringNotContainsString('unknown', $out);
+        self::assertInstanceOf(Json::class, Types::named('json'));
+        self::assertNull(Types::named('unknown'));
+    }
+
+    public function test_a_configured_wrapper_makes_the_key_optional_and_a_null_wrapper_is_the_same(): void
+    {
+        $generator = new TypeGenerator([new PublicPropertiesSource([Shape::class])], wrappers: [FixtureLazy::class => WrapperKind::Optional]);
+
+        self::assertStringContainsString(<<<'TS'
+            export type FixtureLazyPage = {
+            	/** sent only when asked for */
+            	child?: FixtureChild;
+            	names?: string[];
+            	count?: number;
+            	title: string;
+            };
+            TS, self::emit($generator, FixtureLazyPage::class));
+    }
+
+    public function test_a_wrapper_class_is_refused_when_it_is_not_configured(): void
+    {
+        $this->expectException(UnsupportedType::class);
+        $this->expectExceptionMessage('FixtureLazyPage::$child: unsupported type `FixtureLazy<FixtureChild>`');
+
+        self::emit(new TypeGenerator([new PublicPropertiesSource([Shape::class])]), FixtureLazyPage::class);
     }
 
     public function test_the_attribute_names_the_type_and_keys_follow_the_configured_case(): void

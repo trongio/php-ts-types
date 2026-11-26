@@ -16,7 +16,8 @@ use Trongio\PhpTsTypes\Php\LeafMapper;
 use Trongio\PhpTsTypes\Source\KeyCase;
 use Trongio\PhpTsTypes\Source\PublicPropertiesSource;
 use Trongio\PhpTsTypes\Source\TypeSource;
-use Trongio\PhpTsTypes\Type\Primitive;
+use Trongio\PhpTsTypes\Type\Types;
+use Trongio\PhpTsTypes\Type\WrapperKind;
 use Trongio\PhpTsTypes\TypeGenerator;
 use UnexpectedValueException;
 
@@ -87,7 +88,7 @@ final class GenerateCommand extends Command
         $classes = array_values(array_unique($classes));
         sort($classes);
 
-        $generator = new TypeGenerator($this->sources($config), $this->leaves($config));
+        $generator = new TypeGenerator($this->sources($config), $this->leaves($config), wrappers: self::wrappers($config));
         $definitions = $generator->generate($classes);
 
         if ($config->get('ts-types.inertia.manifest') === true) {
@@ -138,7 +139,7 @@ final class GenerateCommand extends Command
         $map = [];
 
         foreach (self::map($config->get('ts-types.leaves', [])) as $class => $primitive) {
-            $map[$class] = Primitive::named($primitive) ?? throw new UnexpectedValueException("ts-types.leaves.{$class}");
+            $map[$class] = Types::named($primitive) ?? throw new UnexpectedValueException("ts-types.leaves.{$class}");
         }
 
         if ($map !== []) {
@@ -146,6 +147,22 @@ final class GenerateCommand extends Command
         }
 
         return $leaves;
+    }
+
+    /**
+     * `ts-types.wrappers`: lazy-prop wrapper class => `deferred`, `optional`, `once` or `merge`.
+     *
+     * @return array<string, WrapperKind>
+     */
+    private static function wrappers(Repository $config): array
+    {
+        $wrappers = [];
+
+        foreach (self::map($config->get('ts-types.wrappers', [])) as $class => $kind) {
+            $wrappers[ltrim($class, '\\')] = WrapperKind::tryFrom($kind) ?? throw new UnexpectedValueException("ts-types.wrappers.{$class}");
+        }
+
+        return $wrappers;
     }
 
     /** @return list<string> */
