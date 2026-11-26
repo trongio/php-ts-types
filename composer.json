@@ -1,0 +1,55 @@
+{
+    "name": "trongio/php-ts-types",
+    "description": "Generate TypeScript types from PHP classes: a small structural type model, a deterministic emitter with a drift check, a reflection source and Laravel + Inertia integration.",
+    "type": "library",
+    "license": "MIT",
+    "keywords": [
+        "typescript",
+        "laravel",
+        "inertia",
+        "codegen",
+        "types"
+    ],
+    "require": {
+        "php": "^8.3",
+        "phpstan/phpdoc-parser": "^2.0"
+    },
+    "require-dev": {
+        "illuminate/console": "^11.0|^12.0|^13.0",
+        "illuminate/support": "^11.0|^12.0|^13.0",
+        "phpunit/phpunit": "^11.0|^12.0",
+        "phpstan/phpstan": "^2.1",
+        "phpstan/phpstan-strict-rules": "^2.0"
+    },
+    "suggest": {
+        "illuminate/console": "For the Laravel bridge: php artisan ts-types:generate (^11.0|^12.0|^13.0)",
+        "illuminate/support": "For the Laravel bridge's service provider (^11.0|^12.0|^13.0)",
+        "inertiajs/inertia-laravel": "For Inertia page props; the page manifest itself needs no Inertia classes"
+    },
+    "autoload": {
+        "psr-4": {
+            "Trongio\\PhpTsTypes\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Trongio\\PhpTsTypes\\Tests\\": "tests/"
+        }
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "Trongio\\PhpTsTypes\\Laravel\\TsTypesServiceProvider"
+            ]
+        }
+    },
+    "minimum-stability": "stable",
+    "homepage": "https://github.com/trongio/php-ts-types",
+    "scripts": {
+        "test": "phpunit",
+        "analyse": "phpstan analyse --no-progress --memory-limit=1G"
+    },
+    "config": {
+        "sort-packages": true
+    }
+}

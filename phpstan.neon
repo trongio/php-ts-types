@@ -1,0 +1,10 @@
+# Level max, strict rules, bleeding edge, nothing suppressed.
+includes:
+    - vendor/phpstan/phpstan-strict-rules/rules.neon
+    - vendor/phpstan/phpstan/conf/bleedingEdge.neon
+
+parameters:
+    level: max
+    paths:
+        - src
+        - tests
