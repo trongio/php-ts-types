@@ -39,7 +39,9 @@ Generate TypeScript types from PHP classes, and fail CI when the committed file 
 | a configured wrapper `W<T>` (property) | `key?: T`                  |
 
 A **wrapper** is your own lazy-prop class (an Inertia optional or deferred prop), configured as
-`'wrappers' => [Optional::class => 'optional']`. It is read from the property's PHPDoc with its one type
+`'wrappers' => [Optional::class => 'optional']`. Kinds: `deferred`, `optional`, `once`, `merge` (Inertia's lazy
+props) and `gated` (sent eagerly with the page, but left out entirely when it does not apply, e.g. a block the
+viewer lacks the permission for). It is read from the property's PHPDoc with its one type
 argument (`@param Optional<Verdict> $verdict`), and the key becomes optional: the server leaves it out. A
 nullable wrapper means the same (a null wrapper is a key left out, never a `null` sent). A wrapper without its
 type argument, inside a list, map or shape, or in a union with anything but `null` is refused.

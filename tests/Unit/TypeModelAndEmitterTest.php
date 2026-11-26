@@ -60,6 +60,7 @@ final class TypeModelAndEmitterTest extends TestCase
             new Property('both', Types::nullable(Primitive::number()), true),
             new Property('deferred', new Wrapped(WrapperKind::Deferred, new ListType(new Reference('Tone')))),
             new Property('once', new Wrapped(WrapperKind::Once, Primitive::boolean())),
+            new Property('gated', new Wrapped(WrapperKind::Gated, Primitive::string())),
             new Property('kebab-key', new RecordType(Union::of(Primitive::string(), Primitive::number()))),
             new Property('event', Union::of(
                 new ObjectType([new Property('kind', new Literal('a'))]),
@@ -81,6 +82,7 @@ final class TypeModelAndEmitterTest extends TestCase
             	both?: number | null;
             	deferred?: Tone[];
             	once?: boolean;
+            	gated?: string;
             	"kebab-key": Record<string, string | number>;
             	event: { kind: "a" } | { kind: "b"; n: 2 };
             	empty: Record<string, never>;
